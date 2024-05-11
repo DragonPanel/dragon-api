@@ -3,6 +3,7 @@ const httpz = @import("httpz");
 const Request = httpz.Request;
 const Response = httpz.Response;
 const common = @import("../common.zig");
+const JournalReader = @import("../core/journal-reader.zig").JournalReader;
 
 const JournalQuery = struct {
     /// How many lines should be retuned
@@ -34,7 +35,35 @@ pub fn queryJournal(req: *Request, res: *Response) !void {
         return;
     }
 
-    try res.json(parsedQuery, .{});
+    const allocator = res.arena;
+    var fields: ?[][]const u8 = null;
+
+    if (parsedQuery.?.fields) |f| {
+        var fieldsList = std.ArrayList([]const u8).init(allocator);
+        var it = std.mem.splitSequence(u8, f, ",");
+
+        while (it.next()) |x| {
+            try fieldsList.append(x);
+        }
+
+        fields = try fieldsList.toOwnedSlice();
+    }
+
+    var reader = try JournalReader.init(allocator, .{
+        .unit = parsedQuery.?.unit,
+        .lines = parsedQuery.?.limit,
+        .fields = fields,
+        .cursor = parsedQuery.?.cursor,
+        .direction = if (std.mem.eql(u8, parsedQuery.?.direction, "DESC")) .DESCENDING else .ASCENDING,
+        .encodeBinaryAsBase64 = parsedQuery.?.base64,
+    });
+    defer reader.deinit();
+
+    var outputBuffer = std.ArrayList(u8).init(allocator);
+    try reader.writeToJson(outputBuffer.writer());
+    const output = try outputBuffer.toOwnedSlice();
+    res.body = output;
+    res.content_type = .JSON;
 }
 
 /// Parses get query
