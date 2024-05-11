@@ -7,9 +7,15 @@ const routes = @import("./routes.zig");
 
 pub fn main() !void {
     const port: u16 = 1337;
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    var server = try httpz.Server().init(allocator, .{ .port = port });
+    const allocator = std.heap.c_allocator;
+    var server = try httpz.Server().init(
+        allocator,
+        .{
+            .port = port,
+            .address = "0.0.0.0",
+            .thread_pool = .{ .count = @intCast(try std.Thread.getCpuCount()) },
+        },
+    );
 
     var router = server.router();
 
@@ -22,12 +28,4 @@ pub fn main() !void {
 
 fn getHello(_: *Request, res: *Response) !void {
     try res.json(.{ .hello = "world" }, .{});
-}
-
-comptime {
-    _ = @import("./routes/query-journal.test.zig");
-}
-
-test "yolo" {
-    try std.testing.expect(true);
 }

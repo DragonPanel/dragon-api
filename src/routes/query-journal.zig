@@ -64,6 +64,7 @@ pub fn queryJournal(req: *Request, res: *Response) !void {
     const output = try outputBuffer.toOwnedSlice();
     res.body = output;
     res.content_type = .JSON;
+    try res.write();
 }
 
 /// Parses get query
