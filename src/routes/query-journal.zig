@@ -62,9 +62,11 @@ pub fn queryJournal(req: *Request, res: *Response) !void {
     var outputBuffer = std.ArrayList(u8).init(allocator);
     try reader.writeToJson(outputBuffer.writer());
     const output = try outputBuffer.toOwnedSlice();
+    defer allocator.free(output);
+
     res.body = output;
     res.content_type = .JSON;
-    try res.write();
+    // try res.write();
 }
 
 /// Parses get query
