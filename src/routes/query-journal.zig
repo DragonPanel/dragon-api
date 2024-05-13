@@ -4,6 +4,7 @@ const Request = httpz.Request;
 const Response = httpz.Response;
 const common = @import("../common.zig");
 const JournalReader = @import("../core/journal-reader.zig").JournalReader;
+const configModule = @import("../config.zig");
 
 const JournalQuery = struct {
     /// How many lines should be retuned
@@ -30,9 +31,20 @@ const JournalQuery = struct {
 };
 
 pub fn queryJournal(req: *Request, res: *Response) !void {
-    const parsedQuery = try parseQuery(req, res);
+    var parsedQuery = try parseQuery(req, res);
+    const config = try configModule.getConfig();
+
+    // If parse query returns null then is means some query param was invalid
+    // In that case function sends 400 - Bad request with appropriate message to the client
+    // Yeah, it's kinda ugly but since I can't pass values with zig's errors yet I did that as temporary solution.
+    // TODO: fix it when zig 0.13 will be released
     if (parsedQuery == null) {
         return;
+    }
+
+    if (parsedQuery.?.limit > config.maxJournalLines) {
+        std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.?.limit, config.maxJournalLines });
+        parsedQuery.?.limit = config.maxJournalLines;
     }
 
     const allocator = res.arena;

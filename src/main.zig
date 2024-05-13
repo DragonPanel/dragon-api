@@ -4,28 +4,58 @@ const httpz = @import("httpz");
 const Request = httpz.Request;
 const Response = httpz.Response;
 const routes = @import("./routes.zig");
+const configModule = @import("./config.zig");
 
 pub fn main() !void {
-    const port: u16 = 1337;
     const allocator = std.heap.c_allocator;
+    try configModule.initConfig(allocator, "./config.json", true);
+    const config = try configModule.getConfig();
+
+    var port: ?u16 = config.port;
+    var host: ?[]const u8 = config.host;
+
+    if (config.unixSocket != null) {
+        port = null;
+        host = null;
+    }
+
     var server = try httpz.Server().init(
         allocator,
         .{
             .port = port,
-            .address = "0.0.0.0",
-            .thread_pool = .{ .count = @intCast(try std.Thread.getCpuCount()) },
+            .address = host,
+            .unix_path = config.unixSocket,
+            .thread_pool = .{
+                .count = if (config.threads > 0) config.threads else @intCast(try std.Thread.getCpuCount()),
+            },
         },
     );
 
     var router = server.router();
 
     router.get("/hello", getHello);
-    router.get("/query-journal", routes.queryJournal.queryJournal);
+    router.get(
+        "/query-journal",
+        if (config.features.queryJournal) routes.queryJournal.queryJournal else forbiddenRoute,
+    );
 
-    _ = printf("Serva will now listen on port %d\n", port);
+    if (config.unixSocket) |unixSocket| {
+        std.log.info("Server will listen on unix socket {s}", .{unixSocket});
+    } else {
+        std.log.info("Server will listen on {s}:{d}", .{
+            host orelse "127.0.0.1",
+            port orelse 5882,
+        });
+    }
+
     try server.listen();
 }
 
 fn getHello(_: *Request, res: *Response) !void {
     try res.json(.{ .hello = "world" }, .{});
+}
+
+fn forbiddenRoute(_: *Request, res: *Response) !void {
+    res.status = 403;
+    res.content_type = .JSON;
 }
