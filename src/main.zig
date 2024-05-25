@@ -39,6 +39,9 @@ pub fn main() !void {
         if (config.features.queryJournal) routes.queryJournal.queryJournal else forbiddenRoute,
     );
 
+    var pid_eins = router.group("/pid1", .{});
+    routes.pidEins.registerRoutes(&pid_eins);
+
     if (config.unixSocket) |unixSocket| {
         std.log.info("Server will listen on unix socket {s}", .{unixSocket});
     } else {

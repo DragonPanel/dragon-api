@@ -1,7 +1,7 @@
 const std = @import("std");
 const zbus = @import("./zbus.zig");
 
-const Manager = struct {
+pub const Manager = struct {
     bus: *zbus.ZBus,
 
     const destination = "org.freedesktop.systemd1";
@@ -14,21 +14,22 @@ const Manager = struct {
 
     /// may be used to get the unit object path for a unit name. It takes the unit name and returns the object path. If a unit has not been loaded yet by this name this call will fail.
     /// Caller owns returned Path and is responsible for freeing it.
-    pub fn getUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8) zbus.ZbusError!zbus.Path {
-        const m = try self.bus.callMethod(
+    pub fn getUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8) !zbus.Path {
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
             "GetUnit",
             "s",
-            .{name},
+            .{name.ptr},
         );
         defer m.unref();
+
         var unit: ?[*:0]const u8 = null;
-        try m.read("o", .{&unit});
+        _ = try m.read("o", .{&unit});
 
         if (unit) |not_null_unit| {
-            return try allocator.dupeZ(u8, not_null_unit);
+            return try allocator.dupeZ(u8, std.mem.sliceTo(not_null_unit, 0));
         } else {
             unreachable; // unit shouldn't be null.
         }
@@ -39,7 +40,7 @@ const Manager = struct {
     /// is similar to getUnit() but will load the unit from disk if possible.
     /// Caller owns returned Path and is responsible for freeing it.
     pub fn loadUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -49,7 +50,7 @@ const Manager = struct {
         );
         defer m.unref();
         var unit: ?[*:0]const u8 = null;
-        try m.read("o", .{&unit});
+        _ = try m.read("o", .{&unit});
 
         if (unit) |not_null_unit| {
             return try allocator.dupeZ(u8, not_null_unit);
@@ -68,7 +69,7 @@ const Manager = struct {
     /// It is not recommended to make use of the latter two options. Returns the newly created job object.
     /// Returns path to enqueued job. Caller owns returned Path and is responsible for freeing it.
     pub fn startUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -78,15 +79,15 @@ const Manager = struct {
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
-        try m.read("o", .{&job});
+        _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, job.?);
+        return try allocator.dupeZ(u8, std.mem.sliceTo(u8, job.?, 0));
     }
 
     /// StopUnit() is similar to StartUnit() but stops the specified unit rather than starting it. Note that "isolate" mode is invalid for this call.
     /// Returns path to enqueued job. Caller owns returned Path and is responsible for freeing it.
     pub fn stopUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -96,13 +97,13 @@ const Manager = struct {
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
-        try m.read("o", .{&job});
+        _ = try m.read("o", .{&job});
 
         return try allocator.dupeZ(u8, job.?);
     }
 
     pub fn reloadUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -112,13 +113,13 @@ const Manager = struct {
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
-        try m.read("o", .{&job});
+        _ = try m.read("o", .{&job});
 
         return try allocator.dupeZ(u8, job.?);
     }
 
     pub fn restartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -128,13 +129,13 @@ const Manager = struct {
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
-        try m.read("o", .{&job});
+        _ = try m.read("o", .{&job});
 
         return try allocator.dupeZ(u8, job.?);
     }
 
     pub fn reloadOrRestartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -144,13 +145,13 @@ const Manager = struct {
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
-        try m.read("o", .{&job});
+        _ = try m.read("o", .{&job});
 
         return try allocator.dupeZ(u8, job.?);
     }
 
     pub fn killUnit(self: *Manager, name: [:0]const u8, who: [:0]const u8, signal: i32) zbus.ZBusError!void {
-        const m = try self.bus.callMethod(
+        var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
             Manager.interface,
@@ -159,5 +160,22 @@ const Manager = struct {
             .{ name, who, signal },
         );
         defer m.unref();
+    }
+
+    pub fn getJob(self: *Manager, allocator: std.mem.Allocator, id: u32) zbus.ZBusError!void {
+        var m = try self.bus.callMethod(
+            Manager.destination,
+            Manager.path,
+            Manager.interface,
+            "GetJob",
+            "u",
+            .{id},
+        );
+        defer m.unref();
+
+        var job: ?[*:0]const u8 = null;
+        _ = try m.read("o", .{&job});
+
+        return try allocator.dupeZ(u8, job.?);
     }
 };

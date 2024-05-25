@@ -175,8 +175,8 @@ pub const SdBusError = struct {
     pub fn copy(self: SdBusError, allocator: std.mem.Allocator) !SdBusErrorCopied {
         return SdBusErrorCopied{
             .allocator = allocator,
-            .name = if (self.name) |name| allocator.dupeZ(u8, name) else null,
-            .message = if (self.message) |message| allocator.dupeZ(u8, message) else null,
+            .name = if (self.name) |name| try allocator.dupeZ(u8, name) else null,
+            .message = if (self.message) |message| try allocator.dupeZ(u8, message) else null,
             .errno = self.errno,
         };
     }
