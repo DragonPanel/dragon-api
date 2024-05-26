@@ -162,7 +162,7 @@ pub const Manager = struct {
         defer m.unref();
     }
 
-    pub fn getJob(self: *Manager, allocator: std.mem.Allocator, id: u32) zbus.ZBusError!void {
+    pub fn getJob(self: *Manager, allocator: std.mem.Allocator, id: u32) zbus.ZBusError!zbus.Path {
         var m = try self.bus.callMethod(
             Manager.destination,
             Manager.path,
@@ -178,4 +178,74 @@ pub const Manager = struct {
 
         return try allocator.dupeZ(u8, job.?);
     }
+
+    pub fn listUnits(self: *Manager, allocator: std.mem.Allocator) !zbus.ParsedMessage([]UnitListEntry) {
+        var parsedMessage = zbus.ParsedMessage([]UnitListEntry){ .arena = std.heap.ArenaAllocator.init(allocator) };
+        parsedMessage.value = try self.listUnitsLeaky(parsedMessage.arena.allocator());
+        return parsedMessage;
+    }
+
+    pub fn listUnitsLeaky(self: *Manager, allocator: std.mem.Allocator) ![]UnitListEntry {
+        var m = try self.bus.callMethod(
+            Manager.destination,
+            Manager.path,
+            Manager.interface,
+            "ListUnits",
+            "",
+            .{},
+        );
+        defer m.unref();
+
+        var list = std.ArrayList(UnitListEntry).init(allocator);
+        errdefer list.deinit();
+
+        try m.enterContainer('a', "(ssssssouso)");
+
+        while (true) {
+            var x0: ?[*:0]const u8 = null;
+            var x1: ?[*:0]const u8 = null;
+            var x2: ?[*:0]const u8 = null;
+            var x3: ?[*:0]const u8 = null;
+            var x4: ?[*:0]const u8 = null;
+            var x5: ?[*:0]const u8 = null;
+            var x6: ?[*:0]const u8 = null;
+            var x7: u32 = 0;
+            var x8: ?[*:0]const u8 = null;
+            var x9: ?[*:0]const u8 = null;
+
+            const wasRead = try m.read("(ssssssouso)", .{ &x0, &x1, &x2, &x3, &x4, &x5, &x6, &x7, &x8, &x9 });
+            if (!wasRead) break;
+
+            // Note, in case or allocation error we will have memory leak here
+            // But that's okey, I am not designing this API as OOM resistant.
+            try list.append(.{
+                .name = try allocator.dupeZ(u8, std.mem.sliceTo(x0.?, 0)),
+                .description = try allocator.dupeZ(u8, std.mem.sliceTo(x1.?, 0)),
+                .load_state = try allocator.dupeZ(u8, std.mem.sliceTo(x2.?, 0)),
+                .active_state = try allocator.dupeZ(u8, std.mem.sliceTo(x3.?, 0)),
+                .sub_state = try allocator.dupeZ(u8, std.mem.sliceTo(x4.?, 0)),
+                .followed = try allocator.dupeZ(u8, std.mem.sliceTo(x5.?, 0)),
+                .path = try allocator.dupeZ(u8, std.mem.sliceTo(x6.?, 0)),
+                .queued_job_id = x7,
+                .job_type = try allocator.dupeZ(u8, std.mem.sliceTo(x8.?, 0)),
+                .job_path = try allocator.dupeZ(u8, std.mem.sliceTo(x9.?, 0)),
+            });
+        }
+
+        try m.exitContainer();
+        return try list.toOwnedSlice();
+    }
+};
+
+pub const UnitListEntry = struct {
+    name: [:0]const u8,
+    description: [:0]const u8,
+    load_state: [:0]const u8,
+    active_state: [:0]const u8,
+    sub_state: [:0]const u8,
+    followed: [:0]const u8,
+    path: zbus.Path,
+    queued_job_id: u32,
+    job_type: [:0]const u8,
+    job_path: zbus.Path,
 };

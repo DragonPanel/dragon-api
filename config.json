@@ -1,6 +1,6 @@
 {
   "host": "127.0.0.1",
-  "port": 2337,
+  "port": 1337,
   "unixSocket": null,
   "threads": 0,
   "maxJournalLines": 1000,
