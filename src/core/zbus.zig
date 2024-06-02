@@ -118,6 +118,37 @@ pub const ZBus = struct {
         return Message{ .m = reply };
     }
 
+    pub fn getProperty(
+        self: *ZBus,
+        destination: [:0]const u8,
+        path: [:0]const u8,
+        interface: [:0]const u8,
+        member: [:0]const u8,
+        types: [:0]const u8,
+    ) ZBusError!Message {
+        c_systemd.sd_bus_error_free(&self.last_call_error);
+        var reply: ?*c_systemd.sd_bus_message = null;
+        errdefer _ = c_systemd.sd_bus_message_unref(reply);
+
+        const r = c_systemd.sd_bus_get_property(
+            self.bus,
+            destination,
+            path,
+            interface,
+            member,
+            &self.last_call_error,
+            &reply,
+            types,
+        );
+
+        if (r < 0) {
+            self.last_errno = r;
+            return ZBusError.Errno;
+        }
+
+        return Message{ .m = reply };
+    }
+
     pub fn call(self: *ZBus, message: Message, usec: u64) ZBusError!Message {
         // It's safe to call it on SD_BUS_ERROR_NULL. It will also reset value to SD_BUS_ERROR_NULL.
         // We need to always call that before call to avoid memory leak.
