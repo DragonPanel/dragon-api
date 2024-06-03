@@ -3,6 +3,10 @@ const c_systemd = @cImport({
     @cInclude("systemd/sd-bus.h");
 });
 
+pub const BUS_TYPE_STRUCT: u8 = c_systemd.SD_BUS_TYPE_STRUCT;
+pub const BUS_TYPE_DICT_ENTRY: u8 = c_systemd.SD_BUS_TYPE_DICT_ENTRY;
+pub const BUS_TYPE_ARRAY: u8 = c_systemd.SD_BUS_TYPE_ARRAY;
+
 pub const ZBusError = error{
     Errno,
 };
@@ -13,6 +17,82 @@ pub const Path = [:0]const u8;
 threadlocal var last_errno: i32 = 0;
 pub fn getLastErrno() i32 {
     return last_errno;
+}
+
+/// This function calls `sd\_bus\_default` from libsystemd, call `deinit` on returned object to destroy reference. From libsystemd docs:
+/// `sd\_bus\_default()` acquires a bus connection object to the user bus when invoked from within a user slice (any session under "user-*.slice", e.g.: "user@1000.service"),
+/// or to the system bus otherwise. The connection object is associated with the calling thread.
+/// Each time the function is invoked from the same thread, the same object is returned, but its reference count is increased by one, as long as at least one reference is kept.
+///
+/// Read more [here](https://www.freedesktop.org/software/systemd/man/latest/sd_bus_default.html)
+pub fn default() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = false };
+    const ret = c_systemd.sd_bus_default(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
+}
+
+/// This function calls `sd\_bus\_default\_user` from libsystemd, call deinit on returned object to destroy reference.
+/// It works almost identically to `default` function but always connects to user bus.
+/// From libsystemd docs:
+/// `sd\_bus\_default\_user()` returns a user bus connection object associated with the calling thread.
+///
+/// Read more [here](https://www.freedesktop.org/software/systemd/man/latest/sd_bus_default.html)
+pub fn defaultUser() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = false };
+    const ret = c_systemd.sd_bus_default_user(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
+}
+
+/// This function calls `sd\_bus\_default\_system` from libsystemd, call deinit on returned object to destroy reference.
+/// It works almost identically to `default` function but always connects to the systemd bus.
+/// From libsystemd docs:
+/// `sd_bus_default_system()` is similar \[to the `sd_bus_default_user()`\], but connects to the system bus.
+pub fn defaultSystem() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = false };
+    const ret = c_systemd.sd_bus_default_system(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
+}
+
+pub fn open() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = true };
+    const ret = c_systemd.sd_bus_open(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
+}
+
+pub fn openSystem() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = true };
+    const ret = c_systemd.sd_bus_open_system(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
+}
+
+pub fn openUser() ZBusError!ZBus {
+    var zbus = ZBus{ .owned_connection = true };
+    const ret = c_systemd.sd_bus_open_user(&zbus.bus);
+    if (ret < 0) {
+        last_errno = ret;
+        return ZBusError.Errno;
+    }
+    return zbus;
 }
 
 /// Just a wrapper for some sd\_bus\_\* methods.
@@ -286,13 +366,34 @@ pub const Message = struct {
         return r > 0;
     }
 
+    pub fn skip(self: *Message, types: ?[*:0]const u8) ZBusError!void {
+        const r = c_systemd.sd_bus_message_skip(self.m, types);
+        if (r < 0) {
+            self.last_errno = r;
+            return ZBusError.Errno;
+        }
+    }
+
+    /// PeekResult.contents are only borrowed.
+    pub fn peekType(self: *Message) ZBusError!PeekResult {
+        var ret = PeekResult{};
+        const r = c_systemd.sd_bus_message_peek_type(self.m, &ret.type, &ret.contents);
+        if (r < 0) {
+            self.last_errno = r;
+            return ZBusError.Errno;
+        }
+
+        return ret;
+    }
+
     /// Calls sd\_bus\_message\_enter\_container from libsystemd.
-    pub fn enterContainer(self: *Message, containerType: u8, contents: [:0]const u8) ZBusError!void {
+    pub fn enterContainer(self: *Message, containerType: u8, contents: [:0]const u8) ZBusError!bool {
         const r = c_systemd.sd_bus_message_enter_container(self.m, containerType, contents);
         if (r < 0) {
             self.last_errno = r;
             return ZBusError.Errno;
         }
+        return r > 0;
     }
 
     /// Calls sd\_bus\_message\_exit\_container from libsystemd.
@@ -305,81 +406,10 @@ pub const Message = struct {
     }
 };
 
-/// This function calls `sd\_bus\_default` from libsystemd, call `deinit` on returned object to destroy reference. From libsystemd docs:
-/// `sd\_bus\_default()` acquires a bus connection object to the user bus when invoked from within a user slice (any session under "user-*.slice", e.g.: "user@1000.service"),
-/// or to the system bus otherwise. The connection object is associated with the calling thread.
-/// Each time the function is invoked from the same thread, the same object is returned, but its reference count is increased by one, as long as at least one reference is kept.
-///
-/// Read more [here](https://www.freedesktop.org/software/systemd/man/latest/sd_bus_default.html)
-pub fn default() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = false };
-    const ret = c_systemd.sd_bus_default(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
-
-/// This function calls `sd\_bus\_default\_user` from libsystemd, call deinit on returned object to destroy reference.
-/// It works almost identically to `default` function but always connects to user bus.
-/// From libsystemd docs:
-/// `sd\_bus\_default\_user()` returns a user bus connection object associated with the calling thread.
-///
-/// Read more [here](https://www.freedesktop.org/software/systemd/man/latest/sd_bus_default.html)
-pub fn defaultUser() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = false };
-    const ret = c_systemd.sd_bus_default_user(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
-
-/// This function calls `sd\_bus\_default\_system` from libsystemd, call deinit on returned object to destroy reference.
-/// It works almost identically to `default` function but always connects to the systemd bus.
-/// From libsystemd docs:
-/// `sd_bus_default_system()` is similar \[to the `sd_bus_default_user()`\], but connects to the system bus.
-pub fn defaultSystem() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = false };
-    const ret = c_systemd.sd_bus_default_system(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
-
-pub fn open() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = true };
-    const ret = c_systemd.sd_bus_open(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
-
-pub fn openSystem() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = true };
-    const ret = c_systemd.sd_bus_open_system(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
-
-pub fn openUser() ZBusError!ZBus {
-    var zbus = ZBus{ .owned_connection = true };
-    const ret = c_systemd.sd_bus_open_user(&zbus.bus);
-    if (ret < 0) {
-        last_errno = ret;
-        return ZBusError.Errno;
-    }
-    return zbus;
-}
+pub const PeekResult = struct {
+    type: u8,
+    contents: ?[*:0]const u8 = null,
+};
 
 pub fn ParsedMessage(comptime T: type) type {
     return struct {

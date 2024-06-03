@@ -8,7 +8,8 @@ const Response = httpz.Response;
 
 pub fn registerRoutes(group: anytype) void {
     group.get("/units", listUnits);
-    group.get("/unit/path/by-name/:name", getUnitPathByName);
+    group.get("/unit/by-name/:name/path", getUnitPathByName);
+    group.get("/unit/by-path/:path/properties/list", listProperties);
 }
 
 pub fn getUnitPathByName(req: *Request, res: *Response) !void {
@@ -20,6 +21,20 @@ pub fn getUnitPathByName(req: *Request, res: *Response) !void {
         return sendError(res, &bus);
     };
     try res.json(.{ .path = path }, .{});
+}
+
+pub fn listProperties(req: *Request, res: *Response) !void {
+    var bus = try zbus.openSystem();
+    defer bus.deinit();
+
+    var pathUnescapeBuffer: [128]u8 = undefined;
+    const path = (try httpz.Url.unescape(req.arena, &pathUnescapeBuffer, req.param("path").?)).value;
+
+    var properties = systemdbus.Properties.init(&bus, try res.arena.dupeZ(u8, path));
+
+    try res.json(properties.listPropertiesLeaky(res.arena) catch {
+        return sendError(res, &bus);
+    }, .{});
 }
 
 // TODO: add some filtering maybe uwu
