@@ -387,7 +387,7 @@ pub const Message = struct {
     }
 
     /// Calls sd\_bus\_message\_enter\_container from libsystemd.
-    pub fn enterContainer(self: *Message, containerType: u8, contents: [:0]const u8) ZBusError!bool {
+    pub fn enterContainer(self: *Message, containerType: u8, contents: [*:0]const u8) ZBusError!bool {
         const r = c_systemd.sd_bus_message_enter_container(self.m, containerType, contents);
         if (r < 0) {
             self.last_errno = r;
@@ -407,7 +407,7 @@ pub const Message = struct {
 };
 
 pub const PeekResult = struct {
-    type: u8,
+    type: u8 = 0,
     contents: ?[*:0]const u8 = null,
 };
 

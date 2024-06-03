@@ -9,7 +9,8 @@ const Response = httpz.Response;
 pub fn registerRoutes(group: anytype) void {
     group.get("/units", listUnits);
     group.get("/unit/by-name/:name/path", getUnitPathByName);
-    group.get("/unit/by-path/:path/properties/list", listProperties);
+    group.get("/unit/by-path/:path/properties", unitByPathGetProperties);
+    group.get("/unit/by-path/:path/properties/list", unitByPathListProperties);
 }
 
 pub fn getUnitPathByName(req: *Request, res: *Response) !void {
@@ -23,11 +24,11 @@ pub fn getUnitPathByName(req: *Request, res: *Response) !void {
     try res.json(.{ .path = path }, .{});
 }
 
-pub fn listProperties(req: *Request, res: *Response) !void {
+pub fn unitByPathListProperties(req: *Request, res: *Response) !void {
     var bus = try zbus.openSystem();
     defer bus.deinit();
 
-    var pathUnescapeBuffer: [128]u8 = undefined;
+    var pathUnescapeBuffer: [256]u8 = undefined;
     const path = (try httpz.Url.unescape(req.arena, &pathUnescapeBuffer, req.param("path").?)).value;
 
     var properties = systemdbus.Properties.init(&bus, try res.arena.dupeZ(u8, path));
@@ -35,6 +36,49 @@ pub fn listProperties(req: *Request, res: *Response) !void {
     try res.json(properties.listPropertiesLeaky(res.arena) catch {
         return sendError(res, &bus);
     }, .{});
+}
+
+/// $Method: GET
+/// $Path: /<pideins>/unit/by-path/:path/properties
+/// $OptionalQuery-props: comma-separated list of desired properties to be returned, without any spaces. Example: Id,Names,Type
+/// $Status: 200
+/// $Returns: { [key: string]: any }
+/// $Error-400: Probably wrong unit path, note this endpoint doesn't return error 404.
+///
+/// Returns all or selected properties of unit with specified path
+/// Route fragment `:path` must be urlencoded
+pub fn unitByPathGetProperties(req: *Request, res: *Response) !void {
+    var bus = try zbus.openSystem();
+    defer bus.deinit();
+
+    var pathUnescapeBuffer: [256]u8 = undefined;
+    const path = (try httpz.Url.unescape(req.arena, &pathUnescapeBuffer, req.param("path").?)).value;
+
+    var properties = systemdbus.Properties.init(&bus, try res.arena.dupeZ(u8, path));
+    const writer = res.writer();
+
+    const query = try req.query();
+    const propsOpt = query.get("props");
+
+    if (propsOpt) |props| {
+        var pList = std.ArrayList([]const u8).init(res.arena);
+        var iter = std.mem.splitScalar(u8, props, ',');
+
+        while (iter.next()) |prop| {
+            try pList.append(prop);
+        }
+
+        const pSlice = try pList.toOwnedSlice();
+
+        return properties.getSelectedToJson(writer, pSlice) catch {
+            return sendError(res, &bus);
+        };
+    }
+
+    properties.getAllToJson(writer) catch {
+        res.conn.res_state.body_len = 0;
+        return sendError(res, &bus);
+    };
 }
 
 // TODO: add some filtering maybe uwu

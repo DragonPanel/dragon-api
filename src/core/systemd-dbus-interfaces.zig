@@ -1,10 +1,10 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const zbus = @import("./zbus.zig");
 const ZBusProxy = @import("./zbus-proxy.zig").ZBusProxy;
 
-const Errors = error{
-    UnknownTypeFound,
-};
+// I need this error set because ZIG CAN'T INFER ERRORS IN RECURSIVE CALLS -____-
+pub const Errors = error{ UnknownTypeFound, Errno, OutOfMemory };
 
 pub const Manager = struct {
     proxy: ZBusProxy,
@@ -275,18 +275,15 @@ pub const Properties = struct {
         return try list.toOwnedSlice();
     }
 
-    pub fn getAllJsonLeaky(self: *Properties, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn getAllToJson(self: *Properties, writer: anytype) !void {
         // Return type is a{sv}
         var m = try self.proxy.callMethod("GetAll", "s", .{""});
         defer m.unref();
 
-        var buffer = std.ArrayList(u8).init(allocator);
-        errdefer buffer.deinit();
-
-        const writer = buffer.writer();
         var ws = std.json.writeStream(writer, .{});
 
         _ = try m.enterContainer(zbus.BUS_TYPE_ARRAY, "{sv}");
+        try ws.beginObject();
 
         while (true) {
             const read = try m.enterContainer(zbus.BUS_TYPE_DICT_ENTRY, "sv");
@@ -295,32 +292,60 @@ pub const Properties = struct {
             var prop: ?[*:0]const u8 = null;
             _ = try m.read("s", .{&prop});
 
-            try ws.beginObject();
             try ws.objectField(std.mem.sliceTo(prop.?, 0));
             const variantContents = (try m.peekType()).contents;
-            try readVariant(&m, &ws, variantContents);
-            try ws.endObject();
+            try readVariant(&m, &ws, variantContents.?);
 
-            try m.exitContainer();
             try m.exitContainer();
         }
 
+        try ws.endObject();
         try m.exitContainer();
-
-        return try buffer.toOwnedSlice();
     }
 
-    fn readNext(m: *zbus.Message, jsonWriteStream: anytype) !bool {
+    pub fn getSelectedToJson(self: *Properties, writer: anytype, selected: []const []const u8) !void {
+        // Return type is a{sv}
+        var m = try self.proxy.callMethod("GetAll", "s", .{""});
+        defer m.unref();
+
+        var ws = std.json.writeStream(writer, .{});
+
+        _ = try m.enterContainer(zbus.BUS_TYPE_ARRAY, "{sv}");
+        try ws.beginObject();
+
+        while (true) {
+            const read = try m.enterContainer(zbus.BUS_TYPE_DICT_ENTRY, "sv");
+            if (!read) break;
+
+            var prop: ?[*:0]const u8 = null;
+            _ = try m.read("s", .{&prop});
+
+            if (common.containsString(selected, std.mem.sliceTo(prop.?, 0))) {
+                try ws.objectField(std.mem.sliceTo(prop.?, 0));
+                const variantContents = (try m.peekType()).contents;
+                try readVariant(&m, &ws, variantContents.?);
+            } else {
+                try m.skip(null);
+            }
+
+            try m.exitContainer();
+        }
+
+        try ws.endObject();
+        try m.exitContainer();
+    }
+
+    fn readNext(m: *zbus.Message, jsonWriteStream: anytype) Errors!bool {
         const t = try m.peekType();
         if (t.type == 0) {
             return false;
         }
 
-        switch (t.type) {
-            'v' => readVariant(m, jsonWriteStream, t.contents),
-            zbus.BUS_TYPE_STRUCT => readStruct(m, jsonWriteStream, t.contents),
-            zbus.BUS_TYPE_ARRAY => readArray(m, jsonWriteStream, t.contents),
-            zbus.BUS_TYPE_DICT_ENTRY => readDictEntry(m, jsonWriteStream, t.contents),
+        try switch (t.type) {
+            'v' => readVariant(m, jsonWriteStream, t.contents.?),
+            zbus.BUS_TYPE_STRUCT => readStruct(m, jsonWriteStream, t.contents.?),
+            zbus.BUS_TYPE_ARRAY => readArray(m, jsonWriteStream, t.contents.?),
+            zbus.BUS_TYPE_DICT_ENTRY => readDictEntry(m, jsonWriteStream, t.contents.?),
 
             // basic types
             'y' => {
@@ -384,21 +409,21 @@ pub const Properties = struct {
                 _ = try m.read("h", .{&v});
             },
             else => {
-                std.log.err("Unknown systemd dbus type found: {c}", t.type);
+                std.log.err("Unknown systemd dbus type found: {c}", .{t.type});
                 return Errors.UnknownTypeFound;
             },
-        }
+        };
 
         return true;
     }
 
-    fn readVariant(m: *zbus.Message, jsonWriteStream: anytype, contents: ?[*:0]const u8) !void {
+    fn readVariant(m: *zbus.Message, jsonWriteStream: anytype, contents: [*:0]const u8) !void {
         _ = try m.enterContainer('v', contents);
         _ = try readNext(m, jsonWriteStream);
         try m.exitContainer();
     }
 
-    fn readStruct(m: *zbus.Message, jsonWriteStream: anytype, contents: ?[*:0]const u8) !void {
+    fn readStruct(m: *zbus.Message, jsonWriteStream: anytype, contents: [*:0]const u8) !void {
         _ = try m.enterContainer(zbus.BUS_TYPE_STRUCT, contents);
         // since zbus struct are like tuples I have to use array here, which makes me really sad.
         try jsonWriteStream.beginArray();
@@ -412,7 +437,7 @@ pub const Properties = struct {
         try m.exitContainer();
     }
 
-    fn readArray(m: *zbus.Message, jsonWriteStream: anytype, contents: ?[*:0]const u8) !void {
+    fn readArray(m: *zbus.Message, jsonWriteStream: anytype, contents: [*:0]const u8) !void {
         _ = try m.enterContainer(zbus.BUS_TYPE_ARRAY, contents);
 
         try jsonWriteStream.beginArray();
@@ -427,7 +452,7 @@ pub const Properties = struct {
         try m.exitContainer();
     }
 
-    fn readDictEntry(m: *zbus.Message, jsonWriteStream: anytype, contents: ?[*:0]const u8) !void {
+    fn readDictEntry(m: *zbus.Message, jsonWriteStream: anytype, contents: [*:0]const u8) !void {
         // Dictionaries will be read into array of objects, containing two properties: key and value.
         // I couldn't find anywhere information whether dictionary keys are unique or not AND I WON'T TRUST CHAT GPT who told me they are.
         // And since it's signature is just an array of dict entries, I am gonna assume that they don't have to be unique.
