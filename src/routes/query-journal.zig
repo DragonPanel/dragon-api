@@ -6,6 +6,8 @@ const common = @import("../common.zig");
 const JournalReader = @import("../core/journal-reader.zig").JournalReader;
 const configModule = @import("../config.zig");
 
+const Errors = error{ParsingError};
+
 const JournalQuery = struct {
     /// How many lines should be retuned
     limit: u32 = 100,
@@ -31,26 +33,20 @@ const JournalQuery = struct {
 };
 
 pub fn queryJournal(req: *Request, res: *Response) !void {
-    var parsedQuery = try parseQuery(req, res);
+    var parsedQuery = parseQuery(req, res) catch {
+        return;
+    };
     const config = try configModule.getConfig();
 
-    // If parse query returns null then is means some query param was invalid
-    // In that case function sends 400 - Bad request with appropriate message to the client
-    // Yeah, it's kinda ugly but since I can't pass values with zig's errors yet I did that as temporary solution.
-    // TODO: fix it when zig 0.13 will be released
-    if (parsedQuery == null) {
-        return;
-    }
-
-    if (parsedQuery.?.limit > config.maxJournalLines) {
-        std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.?.limit, config.maxJournalLines });
-        parsedQuery.?.limit = config.maxJournalLines;
+    if (parsedQuery.limit > config.maxJournalLines) {
+        std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.limit, config.maxJournalLines });
+        parsedQuery.limit = config.maxJournalLines;
     }
 
     const allocator = res.arena;
     var fields: ?[][]const u8 = null;
 
-    if (parsedQuery.?.fields) |f| {
+    if (parsedQuery.fields) |f| {
         var fieldsList = std.ArrayList([]const u8).init(allocator);
         var it = std.mem.splitSequence(u8, f, ",");
 
@@ -62,29 +58,28 @@ pub fn queryJournal(req: *Request, res: *Response) !void {
     }
 
     var reader = try JournalReader.init(allocator, .{
-        .unit = parsedQuery.?.unit,
-        .lines = parsedQuery.?.limit,
+        .unit = parsedQuery.unit,
+        .lines = parsedQuery.limit,
         .fields = fields,
-        .cursor = parsedQuery.?.cursor,
-        .direction = if (std.mem.eql(u8, parsedQuery.?.direction, "DESC")) .DESCENDING else .ASCENDING,
-        .encodeBinaryAsBase64 = parsedQuery.?.base64,
+        .cursor = parsedQuery.cursor,
+        .direction = if (std.mem.eql(u8, parsedQuery.direction, "DESC")) .DESCENDING else .ASCENDING,
+        .encodeBinaryAsBase64 = parsedQuery.base64,
     });
     defer reader.deinit();
 
-    var outputBuffer = std.ArrayList(u8).init(allocator);
-    try reader.writeToJson(outputBuffer.writer());
-    const output = try outputBuffer.toOwnedSlice();
-    defer allocator.free(output);
-
-    res.body = output;
     res.content_type = .JSON;
-    // try res.write();
+    reader.writeToJson(res.writer()) catch |err| {
+        // TODO: send nice error message maybe???
+        // This makes httpz to ingore partially written json in case of an error.
+        res.conn.req_state.body_len = 0;
+        return err;
+    };
 }
 
 /// Parses get query
-/// If something is wrong it sends 400 - Bad Request response and returns null.
-/// You **MUST** return from your route handler if this returs null.
-fn parseQuery(req: *Request, res: *Response) !?JournalQuery {
+/// If something is wrong it sends 400 - Bad Request response and returns an error.
+/// You **MUST** not use res object in case of an error.
+fn parseQuery(req: *Request, res: *Response) !JournalQuery {
     var parsedQuery = JournalQuery{};
     const query = try req.query();
 
@@ -95,7 +90,7 @@ fn parseQuery(req: *Request, res: *Response) !?JournalQuery {
                 "Query parameter 'limit' is invalid, it must be positive integer.",
                 .{ .param = "limit", .value = limit },
             );
-            return null;
+            return Errors.ParsingError;
         };
     }
 
@@ -114,7 +109,7 @@ fn parseQuery(req: *Request, res: *Response) !?JournalQuery {
                 "Query parameter 'direction' is invalid, it must be either 'ASC' or 'DESC'.",
                 .{ .param = "direction", .value = direction },
             );
-            return null;
+            return Errors.ParsingError;
         }
     }
 
@@ -128,7 +123,7 @@ fn parseQuery(req: *Request, res: *Response) !?JournalQuery {
                     "Query parameter 'fields' is invalid, it must be comma seperated list of strings that contains only UPPERCASE letters, number, underscores and can't start with double underscore.",
                     .{ .param = try std.fmt.allocPrint(res.arena, "field:{d}", .{i}), .value = field },
                 );
-                return null;
+                return Errors.ParsingError;
             }
             i += 1;
         }
@@ -146,7 +141,7 @@ fn parseQuery(req: *Request, res: *Response) !?JournalQuery {
                 "Query parameter 'base64' is invalid, it must be true, false, yes or no.",
                 .{ .param = "base64", .value = base64 },
             );
-            return null;
+            return Errors.ParsingError;
         }
     }
 
