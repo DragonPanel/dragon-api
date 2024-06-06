@@ -6,6 +6,10 @@ const Response = httpz.Response;
 const routes = @import("./routes.zig");
 const configModule = @import("./config.zig");
 
+pub const std_options = .{
+    .log_level = .info,
+};
+
 pub fn main() !void {
     const allocator = std.heap.c_allocator;
     try configModule.initConfig(allocator, "./config.json", true);
@@ -38,9 +42,7 @@ pub fn main() !void {
         "/query-journal",
         if (config.features.queryJournal) routes.queryJournal.queryJournal else forbiddenRoute,
     );
-
-    var pid_eins = router.group("/pid1", .{});
-    routes.pidEins.registerRoutes(&pid_eins);
+    routes.registerRoutes(router, "/pid1", routes.pidEins.Routes);
 
     if (config.unixSocket) |unixSocket| {
         std.log.info("Server will listen on unix socket {s}", .{unixSocket});
