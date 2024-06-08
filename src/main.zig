@@ -35,13 +35,9 @@ pub fn main() !void {
         },
     );
 
-    var router = server.router();
+    const router = server.router();
 
-    router.get("/hello", getHello);
-    router.get(
-        "/query-journal",
-        if (config.features.queryJournal) routes.queryJournal.queryJournal else forbiddenRoute,
-    );
+    routes.registerRoutes(router, "/journal", routes.journal.Routes);
     routes.registerRoutes(router, "/pid1", routes.pidEins.Routes);
 
     if (config.unixSocket) |unixSocket| {

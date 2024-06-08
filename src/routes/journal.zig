@@ -32,49 +32,51 @@ const JournalQuery = struct {
     // TODO: add later cool filtering stuff ^^
 };
 
-pub fn queryJournal(req: *Request, res: *Response) !void {
-    var parsedQuery = parseQuery(req, res) catch {
-        return;
-    };
-    const config = try configModule.getConfig();
+pub const Routes = struct {
+    pub fn @"GET /query"(req: *Request, res: *Response) anyerror!void {
+        var parsedQuery = parseQuery(req, res) catch {
+            return;
+        };
+        const config = try configModule.getConfig();
 
-    if (parsedQuery.limit > config.maxJournalLines) {
-        std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.limit, config.maxJournalLines });
-        parsedQuery.limit = config.maxJournalLines;
-    }
-
-    const allocator = res.arena;
-    var fields: ?[][]const u8 = null;
-
-    if (parsedQuery.fields) |f| {
-        var fieldsList = std.ArrayList([]const u8).init(allocator);
-        var it = std.mem.splitSequence(u8, f, ",");
-
-        while (it.next()) |x| {
-            try fieldsList.append(x);
+        if (parsedQuery.limit > config.maxJournalLines) {
+            std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.limit, config.maxJournalLines });
+            parsedQuery.limit = config.maxJournalLines;
         }
 
-        fields = try fieldsList.toOwnedSlice();
+        const allocator = res.arena;
+        var fields: ?[][]const u8 = null;
+
+        if (parsedQuery.fields) |f| {
+            var fieldsList = std.ArrayList([]const u8).init(allocator);
+            var it = std.mem.splitSequence(u8, f, ",");
+
+            while (it.next()) |x| {
+                try fieldsList.append(x);
+            }
+
+            fields = try fieldsList.toOwnedSlice();
+        }
+
+        var reader = try JournalReader.init(allocator, .{
+            .unit = parsedQuery.unit,
+            .lines = parsedQuery.limit,
+            .fields = fields,
+            .cursor = parsedQuery.cursor,
+            .direction = if (std.mem.eql(u8, parsedQuery.direction, "DESC")) .DESCENDING else .ASCENDING,
+            .encodeBinaryAsBase64 = parsedQuery.base64,
+        });
+        defer reader.deinit();
+
+        res.content_type = .JSON;
+        reader.writeToJson(res.writer()) catch |err| {
+            // TODO: send nice error message maybe???
+            // This makes httpz to ingore partially written json in case of an error.
+            res.conn.req_state.body_len = 0;
+            return err;
+        };
     }
-
-    var reader = try JournalReader.init(allocator, .{
-        .unit = parsedQuery.unit,
-        .lines = parsedQuery.limit,
-        .fields = fields,
-        .cursor = parsedQuery.cursor,
-        .direction = if (std.mem.eql(u8, parsedQuery.direction, "DESC")) .DESCENDING else .ASCENDING,
-        .encodeBinaryAsBase64 = parsedQuery.base64,
-    });
-    defer reader.deinit();
-
-    res.content_type = .JSON;
-    reader.writeToJson(res.writer()) catch |err| {
-        // TODO: send nice error message maybe???
-        // This makes httpz to ingore partially written json in case of an error.
-        res.conn.req_state.body_len = 0;
-        return err;
-    };
-}
+};
 
 /// Parses get query
 /// If something is wrong it sends 400 - Bad Request response and returns an error.

@@ -58,6 +58,16 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
+    const docs_step = b.step("docs", "Build the documentation");
+
+    const docs = exe.getEmittedDocs();
+
+    docs_step.dependOn(&b.addInstallDirectory(.{
+        .source_dir = docs,
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    }).step);
+
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,

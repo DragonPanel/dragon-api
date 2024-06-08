@@ -1,4 +1,4 @@
-pub const queryJournal = @import("./routes/query-journal.zig");
+pub const journal = @import("./routes/journal.zig");
 pub const pidEins = @import("./routes/pid-eins.zig");
 
 const logger = std.log.scoped(.routeRegister);
