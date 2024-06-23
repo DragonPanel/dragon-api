@@ -1,5 +1,6 @@
 pub const journal = @import("./routes/journal.zig");
 pub const pidEins = @import("./routes/pid-eins.zig");
+pub const linux = @import("./routes/linux.zig");
 
 const logger = std.log.scoped(.routeRegister);
 

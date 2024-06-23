@@ -39,6 +39,7 @@ pub fn main() !void {
 
     routes.registerRoutes(router, "/journal", routes.journal.Routes);
     routes.registerRoutes(router, "/pid1", routes.pidEins.Routes);
+    routes.registerRoutes(router, "/linux", routes.linux.Routes);
 
     if (config.unixSocket) |unixSocket| {
         std.log.info("Server will listen on unix socket {s}", .{unixSocket});
