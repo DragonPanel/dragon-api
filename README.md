@@ -11,13 +11,25 @@ All you need to do is clone this repo and run:
 zig build run
 ```
 
+### This project depends on glibc!
+
 ## Planned features
 * [x] Journald logs reading
 * [ ] Units management with systemd
 * [ ] Resources monitor
 * [ ] Processes management
+* [ ] User management
 * [ ] Writing to STDIO of selected process! (If it's possible lol)
-* [ ] Filesystem access
+* [ ] <del>Filesystem access</del>
+* [ ] Minimal HTTP proxy (to proxy Caddy admin for example)
+* [ ] Docker???
+
+## TODO (so I know what to do next lol)
+* [ ] systemctl enable, disable
+* [ ] systemctl daemon-reload
+* [ ] system resources
+* [ ] process list, hell yeah, let's get to /proc
+* [ ] unification of api errors, need to make it right.
 
 # License
 AGPLv3
