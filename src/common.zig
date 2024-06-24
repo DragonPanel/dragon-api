@@ -73,3 +73,39 @@ pub const ErrnoError = struct {
     description: ?[:0]const u8,
     errno: i32,
 };
+
+pub const ValidationResultBuilder = struct {
+    _res: ValidationResult = .{},
+    _errors: std.ArrayList(ValidationError),
+    _allocator: std.mem.Allocator,
+
+    /// Allocator should be arena allocator to free resources when no longer needed
+    pub fn new(allocator: std.mem.Allocator) ValidationResultBuilder {
+        return .{
+            ._allocator = allocator,
+            ._errors = std.ArrayList(ValidationError).init(allocator),
+        };
+    }
+
+    pub fn addError(self: *ValidationResultBuilder, err: ValidationError) !*ValidationResultBuilder {
+        self._res.success = false;
+        try self._errors.append(err);
+        return self;
+    }
+
+    pub fn build(self: *ValidationResultBuilder) !ValidationResult {
+        self._res.errors = try self._errors.toOwnedSlice();
+        return self._res;
+    }
+};
+
+pub const ValidationError = struct {
+    property: []const u8,
+    value: []const u8,
+    message: []const u8,
+};
+
+pub const ValidationResult = struct {
+    success: bool = true,
+    errors: []const ValidationError = &.{},
+};

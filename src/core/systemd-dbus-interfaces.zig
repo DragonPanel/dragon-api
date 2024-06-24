@@ -67,78 +67,78 @@ pub const Manager = struct {
     /// If "ignore-requirements" it will start a unit but only ignore the requirement dependencies.
     /// It is not recommended to make use of the latter two options. Returns the newly created job object.
     /// Returns path to enqueued job. Caller owns returned Path and is responsible for freeing it.
-    pub fn startUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
+    pub fn startUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) !zbus.Path {
         var m = try self.proxy.callMethod(
             "StartUnit",
             "ss",
-            .{ name, mode },
+            .{ name.ptr, mode.ptr },
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
         _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, std.mem.sliceTo(u8, job.?, 0));
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
     /// StopUnit() is similar to StartUnit() but stops the specified unit rather than starting it. Note that "isolate" mode is invalid for this call.
     /// Returns path to enqueued job. Caller owns returned Path and is responsible for freeing it.
-    pub fn stopUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
+    pub fn stopUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) !zbus.Path {
         var m = try self.proxy.callMethod(
             "StopUnit",
             "ss",
-            .{ name, mode },
+            .{ name.ptr, mode.ptr },
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
         _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, job.?);
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
-    pub fn reloadUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
+    pub fn reloadUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) !zbus.Path {
         var m = try self.proxy.callMethod(
             "ReloadUnit",
             "ss",
-            .{ name, mode },
+            .{ name.ptr, mode.ptr },
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
         _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, job.?);
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
-    pub fn restartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
+    pub fn restartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) !zbus.Path {
         var m = try self.proxy.callMethod(
             "RestartUnit",
             "ss",
-            .{ name, mode },
+            .{ name.ptr, mode.ptr },
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
         _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, job.?);
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
-    pub fn reloadOrRestartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) zbus.ZBusError!zbus.Path {
+    pub fn reloadOrRestartUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8, mode: [:0]const u8) !zbus.Path {
         var m = try self.proxy.callMethod(
             "ReloadOrRestartUnit",
             "ss",
-            .{ name, mode },
+            .{ name.ptr, mode.ptr },
         );
         defer m.unref();
         var job: ?[*:0]const u8 = null;
         _ = try m.read("o", .{&job});
 
-        return try allocator.dupeZ(u8, job.?);
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
     pub fn killUnit(self: *Manager, name: [:0]const u8, who: [:0]const u8, signal: i32) zbus.ZBusError!void {
         var m = try self.proxy.callMethod(
             "KillUnit",
             "ssi",
-            .{ name, who, signal },
+            .{ name.ptr, who.ptr, signal },
         );
         defer m.unref();
     }
@@ -277,7 +277,7 @@ pub const Manager = struct {
             try ws.beginObject();
 
             try ws.objectField("name");
-            try ws.write(name.?);
+            try ws.write(name);
 
             try ws.objectField("description");
             try ws.write(desc);
