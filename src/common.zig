@@ -52,6 +52,22 @@ pub fn containsString(haystack: []const []const u8, needle: []const u8) bool {
     return false;
 }
 
+pub fn stringToBool(str: ?[]const u8, allowNoYes: bool) bool {
+    if (str == null) {
+        return false;
+    }
+
+    if (std.ascii.eqlIgnoreCase(str.?, "true")) {
+        return true;
+    }
+
+    if (allowNoYes and std.ascii.eqlIgnoreCase(str.?, "yes")) {
+        return true;
+    }
+
+    return false;
+}
+
 pub const ErrnoError = struct {
     name: ?[:0]const u8,
     description: ?[:0]const u8,

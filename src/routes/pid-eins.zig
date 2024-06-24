@@ -1,4 +1,5 @@
 const std = @import("std");
+const common = @import("../common.zig");
 const httpz = @import("httpz");
 const zbus = @import("../core/zbus.zig");
 const systemdbus = @import("../core/systemd-dbus-interfaces.zig");
@@ -8,15 +9,28 @@ const Response = httpz.Response;
 
 /// $Prefix: /pid1
 pub const Routes = struct {
-    // TODO: add some filtering maybe uwu
-    pub fn @"GET /units"(_: *Request, res: *Response) anyerror!void {
+    /// $OptionalQuery-type - return only specified unit types.
+    /// $OptionalQuery-onlyActive - if set to "true" or "yes" only units will active_state=active will be returned.
+    pub fn @"GET /units"(req: *Request, res: *Response) anyerror!void {
         var bus = try zbus.openSystem();
         defer bus.deinit();
         var manager: systemdbus.Manager = systemdbus.Manager.init(&bus);
-        const list = manager.listUnitsLeaky(res.arena) catch {
+
+        const query = try req.query();
+        var unitType = query.get("type");
+
+        if (unitType != null and unitType.?.len == 0) {
+            unitType = null;
+        }
+
+        const onlyActive = query.get("onlyActive");
+
+        res.content_type = .JSON;
+
+        manager.listUnitsToJson(res.writer(), unitType, common.stringToBool(onlyActive, true)) catch {
+            res.conn.req_state.body_len = 0;
             return sendError(res, &bus);
         };
-        try res.json(list, .{});
     }
 
     pub fn @"GET /unit/by-path/:name/path"(req: *Request, res: *Response) anyerror!void {
@@ -107,6 +121,7 @@ fn getProperties(req: *Request, res: *Response, bus: *zbus.ZBus, path: []const u
         };
     }
 
+    res.content_type = .JSON;
     properties.getAllToJson(writer) catch {
         res.conn.res_state.body_len = 0;
         return sendError(res, bus);

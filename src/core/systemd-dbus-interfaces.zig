@@ -177,38 +177,140 @@ pub const Manager = struct {
         _ = try m.enterContainer('a', "(ssssssouso)");
 
         while (true) {
-            var x0: ?[*:0]const u8 = null;
-            var x1: ?[*:0]const u8 = null;
-            var x2: ?[*:0]const u8 = null;
-            var x3: ?[*:0]const u8 = null;
-            var x4: ?[*:0]const u8 = null;
-            var x5: ?[*:0]const u8 = null;
-            var x6: ?[*:0]const u8 = null;
-            var x7: u32 = 0;
-            var x8: ?[*:0]const u8 = null;
-            var x9: ?[*:0]const u8 = null;
+            var name: ?[*:0]const u8 = null;
+            var desc: ?[*:0]const u8 = null;
+            var load_state: ?[*:0]const u8 = null;
+            var active_state: ?[*:0]const u8 = null;
+            var sub_state: ?[*:0]const u8 = null;
+            var followed: ?[*:0]const u8 = null;
+            var _path: ?[*:0]const u8 = null;
+            var queued_job_id: u32 = 0;
+            var job_type: ?[*:0]const u8 = null;
+            var job_path: ?[*:0]const u8 = null;
 
-            const wasRead = try m.read("(ssssssouso)", .{ &x0, &x1, &x2, &x3, &x4, &x5, &x6, &x7, &x8, &x9 });
+            const wasRead = try m.read("(ssssssouso)", .{
+                &name,
+                &desc,
+                &load_state,
+                &active_state,
+                &sub_state,
+                &followed,
+                &_path,
+                &queued_job_id,
+                &job_type,
+                &job_path,
+            });
             if (!wasRead) break;
 
             // Note, in case or allocation error we will have memory leak here
             // But that's okey, I am not designing this API as OOM resistant.
             try list.append(.{
-                .name = try allocator.dupeZ(u8, std.mem.sliceTo(x0.?, 0)),
-                .description = try allocator.dupeZ(u8, std.mem.sliceTo(x1.?, 0)),
-                .load_state = try allocator.dupeZ(u8, std.mem.sliceTo(x2.?, 0)),
-                .active_state = try allocator.dupeZ(u8, std.mem.sliceTo(x3.?, 0)),
-                .sub_state = try allocator.dupeZ(u8, std.mem.sliceTo(x4.?, 0)),
-                .followed = try allocator.dupeZ(u8, std.mem.sliceTo(x5.?, 0)),
-                .path = try allocator.dupeZ(u8, std.mem.sliceTo(x6.?, 0)),
-                .queued_job_id = x7,
-                .job_type = try allocator.dupeZ(u8, std.mem.sliceTo(x8.?, 0)),
-                .job_path = try allocator.dupeZ(u8, std.mem.sliceTo(x9.?, 0)),
+                .name = try allocator.dupeZ(u8, std.mem.sliceTo(name.?, 0)),
+                .description = try allocator.dupeZ(u8, std.mem.sliceTo(desc.?, 0)),
+                .load_state = try allocator.dupeZ(u8, std.mem.sliceTo(load_state.?, 0)),
+                .active_state = try allocator.dupeZ(u8, std.mem.sliceTo(active_state.?, 0)),
+                .sub_state = try allocator.dupeZ(u8, std.mem.sliceTo(sub_state.?, 0)),
+                .followed = try allocator.dupeZ(u8, std.mem.sliceTo(followed.?, 0)),
+                .path = try allocator.dupeZ(u8, std.mem.sliceTo(_path.?, 0)),
+                .queued_job_id = queued_job_id,
+                .job_type = try allocator.dupeZ(u8, std.mem.sliceTo(job_type.?, 0)),
+                .job_path = try allocator.dupeZ(u8, std.mem.sliceTo(job_path.?, 0)),
             });
         }
 
         try m.exitContainer();
         return try list.toOwnedSlice();
+    }
+
+    pub fn listUnitsToJson(self: *Manager, writer: anytype, service_type: ?[]const u8, only_active: bool) !void {
+        var ws = std.json.writeStream(writer, .{});
+
+        var m = try self.proxy.callMethod(
+            "ListUnits",
+            "",
+            .{},
+        );
+        defer m.unref();
+
+        _ = try m.enterContainer('a', "(ssssssouso)");
+
+        try ws.beginArray();
+
+        while (true) {
+            var name: ?[*:0]const u8 = null;
+            var desc: ?[*:0]const u8 = null;
+            var load_state: ?[*:0]const u8 = null;
+            var active_state: ?[*:0]const u8 = null;
+            var sub_state: ?[*:0]const u8 = null;
+            var followed: ?[*:0]const u8 = null;
+            var _path: ?[*:0]const u8 = null;
+            var queued_job_id: u32 = 0;
+            var job_type: ?[*:0]const u8 = null;
+            var job_path: ?[*:0]const u8 = null;
+
+            const wasRead = try m.read("(ssssssouso)", .{
+                &name,
+                &desc,
+                &load_state,
+                &active_state,
+                &sub_state,
+                &followed,
+                &_path,
+                &queued_job_id,
+                &job_type,
+                &job_path,
+            });
+            if (!wasRead) break;
+
+            if (service_type) |st| {
+                if (!std.mem.endsWith(u8, std.mem.sliceTo(name.?, 0), st)) {
+                    continue;
+                }
+            }
+
+            if (only_active) {
+                if (!std.mem.eql(u8, std.mem.sliceTo(active_state.?, 0), "active")) {
+                    continue;
+                }
+            }
+
+            try ws.beginObject();
+
+            try ws.objectField("name");
+            try ws.write(name.?);
+
+            try ws.objectField("description");
+            try ws.write(desc);
+
+            try ws.objectField("load_state");
+            try ws.write(load_state);
+
+            try ws.objectField("active_state");
+            try ws.write(active_state);
+
+            try ws.objectField("sub_state");
+            try ws.write(sub_state);
+
+            try ws.objectField("followed");
+            try ws.write(followed);
+
+            try ws.objectField("path");
+            try ws.write(_path);
+
+            try ws.objectField("queued_job_id");
+            try ws.write(queued_job_id);
+
+            try ws.objectField("job_type");
+            try ws.write(job_type);
+
+            try ws.objectField("job_path");
+            try ws.write(job_path);
+
+            try ws.endObject();
+        }
+
+        try m.exitContainer();
+        try ws.endArray();
     }
 };
 
