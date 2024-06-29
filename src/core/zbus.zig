@@ -268,11 +268,32 @@ pub const ZBus = struct {
             interface,
             member,
         );
+        errdefer message.unref();
+
         if (r < 0) {
             self.last_errno = r;
             return ZBusError.Errno;
         }
         return message;
+    }
+
+    pub fn getMethodCallTimeoutUsec(self: *ZBus) ZBusError!u64 {
+        var xd: u64 = 0;
+        const r = c_systemd.sd_bus_get_method_call_timeout(self.bus, &xd);
+        if (r < 0) {
+            self.last_errno = r;
+            return ZBusError.Errno;
+        }
+
+        return xd;
+    }
+
+    pub fn setMethodCallTimeoutUsec(self: *ZBus, timeout_usec: u64) ZBusError!void {
+        const r = c_systemd.sd_bus_set_method_call_timeout(self.bus, timeout_usec);
+        if (r < 0) {
+            self.last_errno = r;
+            return ZBusError.Errno;
+        }
     }
 };
 

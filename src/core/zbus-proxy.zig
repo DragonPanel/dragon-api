@@ -27,6 +27,10 @@ pub const ZBusProxy = struct {
         );
     }
 
+    pub fn messageNewMethodCall(self: *ZBusProxy, method: [:0]const u8) !zbus.Message {
+        return try self.bus.messageNewMethodCall(self.destination, self.path, self.interface, method);
+    }
+
     pub fn getStrProp(self: *ZBusProxy, allocator: std.mem.Allocator, prop: [:0]const u8) ![:0]const u8 {
         var m = try self.bus.getProperty(self.destination, self.path, self.interface, prop, "s");
         defer m.unref();

@@ -27,6 +27,7 @@ zig build run
 ## TODO (so I know what to do next lol)
 * [ ] systemctl enable, disable
 * [ ] systemctl daemon-reload
+* [ ] systemctl start transient
 * [ ] system resources
 * [ ] process list, hell yeah, let's get to /proc
 * [ ] unification of api errors, need to make it right.

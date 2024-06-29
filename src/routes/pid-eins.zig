@@ -9,6 +9,18 @@ const Response = httpz.Response;
 
 /// $Prefix: /pid1
 pub const Routes = struct {
+    pub fn @"POST /manager/reload"(_: *Request, res: *Response) anyerror!void {
+        var bus = try zbus.openSystem();
+        defer bus.deinit();
+        var manager: systemdbus.Manager = systemdbus.Manager.init(&bus);
+
+        res.status = 204;
+
+        manager.reload() catch {
+            return sendBusError(res, &bus);
+        };
+    }
+
     /// $OptionalQuery-type - return only specified unit types.
     /// $OptionalQuery-onlyActive - if set to "true" or "yes" only units will active_state=active will be returned.
     pub fn @"GET /units"(req: *Request, res: *Response) anyerror!void {
@@ -192,6 +204,96 @@ pub const Routes = struct {
         ) catch {
             return sendBusError(res, &bus);
         };
+
+        try res.json(.{
+            .verb = "kill",
+            .whom = body.whom,
+            .signal = body.signal,
+        }, .{});
+    }
+
+    pub fn @"POST /unit/by-name/:name/enable"(req: *Request, res: *Response) anyerror!void {
+        var bus = try zbus.openSystem();
+        defer bus.deinit();
+        var manager = systemdbus.Manager.init(&bus);
+        const name = req.param("name").?;
+
+        // TODO: I am too lazy today but consider moving it to body instead of query.
+        const query = try req.query();
+        const no_reload = common.stringToBool(query.get("noReload"), true);
+
+        const body = try req.json(systemdbus.EnableUnitFilesOptions) orelse systemdbus.EnableUnitFilesOptions{};
+
+        const result = manager.enableUnitFilesLeaky(res.arena, &.{name}, body) catch {
+            return sendBusError(res, &bus);
+        };
+
+        var daemon_reloaded: bool = false;
+        var reload_failed: bool = false;
+
+        if (!no_reload) {
+            manager.reload() catch {
+                reload_failed = true;
+            };
+            daemon_reloaded = !reload_failed;
+        }
+
+        const reload_error = bus.getLastCallError();
+        const reload_error_formatted = .{
+            .errno = reload_error.errno,
+            .@"error" = reload_error.name,
+            .message = reload_error.message,
+        };
+
+        try res.json(.{
+            .verb = "enable",
+            .daemon_reloaded = daemon_reloaded,
+            .reload_failed = reload_failed,
+            .reload_error = if (reload_failed) reload_error_formatted else null,
+            .result = result,
+        }, .{});
+    }
+
+    pub fn @"POST /unit/by-name/:name/disable"(req: *Request, res: *Response) anyerror!void {
+        var bus = try zbus.openSystem();
+        defer bus.deinit();
+        var manager = systemdbus.Manager.init(&bus);
+        const name = req.param("name").?;
+
+        // TODO: I am too lazy today but consider moving it to body instead of query.
+        const query = try req.query();
+        const no_reload = common.stringToBool(query.get("noReload"), true);
+
+        const body = try req.json(systemdbus.DisableUnitFilesOptions) orelse systemdbus.DisableUnitFilesOptions{};
+
+        const result = manager.disableUnitFilesLeaky(res.arena, &.{name}, body) catch {
+            return sendBusError(res, &bus);
+        };
+
+        var daemon_reloaded: bool = false;
+        var reload_failed: bool = false;
+
+        if (!no_reload) {
+            manager.reload() catch {
+                reload_failed = true;
+            };
+            daemon_reloaded = !reload_failed;
+        }
+
+        const reload_error = bus.getLastCallError();
+        const reload_error_formatted = .{
+            .errno = reload_error.errno,
+            .@"error" = reload_error.name,
+            .message = reload_error.message,
+        };
+
+        try res.json(.{
+            .verb = "disable",
+            .daemon_reloaded = daemon_reloaded,
+            .reload_failed = reload_failed,
+            .reload_error = if (reload_failed) reload_error_formatted else null,
+            .result = result,
+        }, .{});
     }
 
     /// $Method: GET

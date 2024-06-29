@@ -17,6 +17,22 @@ pub const Manager = struct {
         return Manager{ .proxy = ZBusProxy.init(bus, destination, path, interface) };
     }
 
+    pub fn reload(self: *Manager) !void {
+        var timeout = try self.proxy.bus.getMethodCallTimeoutUsec();
+        if (timeout < std.math.maxInt(u64) / 2) {
+            // If for some goddamn reason someone would set SYSTEMD_BUS_TIMEOUT to extremely high value
+            // for which should be sent to ninth circle of hell
+            // It won't overflow.
+            // I am setting it to twice as normal timeout, because reload is kinda heavy operation.
+            timeout *= 2;
+        }
+        var m = try self.proxy.messageNewMethodCall("Reload");
+        defer m.unref();
+        var reply = try self.proxy.bus.call(m, timeout);
+        // Technically I don't have to do it as Reload replies nothing but whatever
+        reply.unref();
+    }
+
     /// may be used to get the unit object path for a unit name. It takes the unit name and returns the object path. If a unit has not been loaded yet by this name this call will fail.
     /// Caller owns returned Path and is responsible for freeing it.
     pub fn getUnit(self: *Manager, allocator: std.mem.Allocator, name: [:0]const u8) !zbus.Path {
@@ -132,6 +148,105 @@ pub const Manager = struct {
         _ = try m.read("o", .{&job});
 
         return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
+    }
+
+    pub fn enableUnitFilesLeaky(self: *Manager, allocator: std.mem.Allocator, files: []const []const u8, opts: EnableUnitFilesOptions) !EnableResult {
+        var m = try self.proxy.messageNewMethodCall("EnableUnitFiles");
+        defer m.unref();
+
+        // param: files
+        try m.openContainer(zbus.BUS_TYPE_ARRAY, "s");
+        for (files) |file| {
+            const zeroTerminated = try allocator.dupeZ(u8, file);
+            defer allocator.free(zeroTerminated);
+            try m.append("s", .{zeroTerminated.ptr});
+        }
+        try m.closeContainer();
+        // param: runtime
+        try m.append("b", .{if (opts.runtime) @as(i32, 1) else @as(i32, 0)});
+        // param: force
+        try m.append("b", .{if (opts.force) @as(i32, 1) else @as(i32, 0)});
+
+        var reply = try self.proxy.bus.call(m, 0);
+        defer reply.unref();
+
+        var carries_install_info: i32 = 0;
+        var changes = std.ArrayList(EnableDisableChange).init(allocator);
+        errdefer changes.deinit();
+
+        _ = try reply.read("b", .{&carries_install_info});
+        _ = try reply.enterContainer(zbus.BUS_TYPE_ARRAY, "(sss)");
+
+        while (true) {
+            var change_type: ?[*:0]const u8 = null;
+            var symlink: ?[*:0]const u8 = null;
+            var dest: ?[*:0]const u8 = null;
+
+            const wasRead = try reply.read("(sss)", .{ &change_type, &symlink, &dest });
+            if (!wasRead) {
+                break;
+            }
+
+            try changes.append(EnableDisableChange{
+                .type = try allocator.dupeZ(u8, std.mem.sliceTo(change_type.?, 0)),
+                .symlink_filename = try allocator.dupeZ(u8, std.mem.sliceTo(symlink.?, 0)),
+                .destination_filename = try allocator.dupeZ(u8, std.mem.sliceTo(dest.?, 0)),
+            });
+        }
+
+        try reply.exitContainer();
+
+        return EnableResult{
+            .carries_install_info = carries_install_info > 0,
+            .changes = try changes.toOwnedSlice(),
+        };
+    }
+
+    pub fn disableUnitFilesLeaky(self: *Manager, allocator: std.mem.Allocator, files: []const []const u8, opts: DisableUnitFilesOptions) !DisableResult {
+        var m = try self.proxy.messageNewMethodCall("DisableUnitFiles");
+        defer m.unref();
+
+        // param: files
+        try m.openContainer(zbus.BUS_TYPE_ARRAY, "s");
+        for (files) |file| {
+            const zeroTerminated = try allocator.dupeZ(u8, file);
+            defer allocator.free(zeroTerminated);
+            try m.append("s", .{zeroTerminated.ptr});
+        }
+        try m.closeContainer();
+        // param: runtime
+        try m.append("b", .{if (opts.runtime) @as(i32, 1) else @as(i32, 0)});
+
+        var reply = try self.proxy.bus.call(m, 0);
+        defer reply.unref();
+
+        var changes = std.ArrayList(EnableDisableChange).init(allocator);
+        errdefer changes.deinit();
+
+        _ = try reply.enterContainer(zbus.BUS_TYPE_ARRAY, "(sss)");
+
+        while (true) {
+            var change_type: ?[*:0]const u8 = null;
+            var symlink: ?[*:0]const u8 = null;
+            var dest: ?[*:0]const u8 = null;
+
+            const wasRead = try reply.read("(sss)", .{ &change_type, &symlink, &dest });
+            if (!wasRead) {
+                break;
+            }
+
+            try changes.append(EnableDisableChange{
+                .type = try allocator.dupeZ(u8, std.mem.sliceTo(change_type.?, 0)),
+                .symlink_filename = try allocator.dupeZ(u8, std.mem.sliceTo(symlink.?, 0)),
+                .destination_filename = try allocator.dupeZ(u8, std.mem.sliceTo(dest.?, 0)),
+            });
+        }
+
+        try reply.exitContainer();
+
+        return DisableResult{
+            .changes = try changes.toOwnedSlice(),
+        };
     }
 
     pub fn killUnit(self: *Manager, name: [:0]const u8, who: [:0]const u8, signal: i32) zbus.ZBusError!void {
@@ -584,4 +699,32 @@ pub const UnitListEntry = struct {
     queued_job_id: u32,
     job_type: [:0]const u8,
     job_path: zbus.Path,
+};
+
+pub const EnableUnitFilesOptions = struct {
+    /// Controls whether the unit shall be enabled for runtime only (true, /run/), or persistently (false, /etc/).
+    runtime: bool = false,
+    /// Controls whether symlinks pointing to other units shall be replaced if necessary.
+    force: bool = false,
+};
+
+pub const DisableUnitFilesOptions = struct {
+    /// Controls whether the unit shall be disabled for runtime only (true, /run/), or persistently (false, /etc/).
+    runtime: bool = false,
+};
+
+pub const EnableResult = struct {
+    carries_install_info: bool,
+    changes: []const EnableDisableChange,
+};
+
+pub const DisableResult = struct {
+    changes: []const EnableDisableChange,
+};
+
+pub const EnableDisableChange = struct {
+    /// symlink/unlink
+    type: [:0]const u8,
+    symlink_filename: [:0]const u8,
+    destination_filename: [:0]const u8,
 };
