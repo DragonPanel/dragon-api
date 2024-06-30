@@ -28,7 +28,11 @@ pub const Manager = struct {
         }
         var m = try self.proxy.messageNewMethodCall("Reload");
         defer m.unref();
-        var reply = try self.proxy.bus.call(m, timeout);
+        var reply = self.proxy.bus.call(m, timeout) catch |err| {
+            // I have to set it manually here coz call method doesn't know which method is calling.
+            self.proxy.bus.errored_method_or_property = "Reload";
+            return err;
+        };
         // Technically I don't have to do it as Reload replies nothing but whatever
         reply.unref();
     }
@@ -167,7 +171,10 @@ pub const Manager = struct {
         // param: force
         try m.append("b", .{if (opts.force) @as(i32, 1) else @as(i32, 0)});
 
-        var reply = try self.proxy.bus.call(m, 0);
+        var reply = self.proxy.bus.call(m, 0) catch |err| {
+            self.proxy.bus.errored_method_or_property = "EnableUnitFiles";
+            return err;
+        };
         defer reply.unref();
 
         var carries_install_info: i32 = 0;
@@ -217,7 +224,10 @@ pub const Manager = struct {
         // param: runtime
         try m.append("b", .{if (opts.runtime) @as(i32, 1) else @as(i32, 0)});
 
-        var reply = try self.proxy.bus.call(m, 0);
+        var reply = self.proxy.bus.call(m, 0) catch |err| {
+            self.proxy.bus.errored_method_or_property = "DisableUnitFiles";
+            return err;
+        };
         defer reply.unref();
 
         var changes = std.ArrayList(EnableDisableChange).init(allocator);

@@ -100,6 +100,8 @@ pub fn openUser() ZBusError!ZBus {
 pub const ZBus = struct {
     bus: ?*c_systemd.sd_bus = null,
     last_errno: i32 = 0,
+    errored_method_or_property: ?[]const u8 = null,
+    errored_libsystemd_method: ?[]const u8 = null,
     // I can't use macro SD_BUS_ERROR_NULL because zig can't translate it :(((
     last_call_error: c_systemd.sd_bus_error = .{
         .name = null,
@@ -133,6 +135,8 @@ pub const ZBus = struct {
         const r = c_systemd.sd_bus_flush(self.bus);
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = null;
+            self.errored_libsystemd_method = "sd_bus_flush";
             return ZBusError.Errno;
         }
     }
@@ -192,6 +196,8 @@ pub const ZBus = struct {
 
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = member;
+            self.errored_libsystemd_method = "sd_bus_call_method";
             return ZBusError.Errno;
         }
 
@@ -223,6 +229,8 @@ pub const ZBus = struct {
 
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = member;
+            self.errored_libsystemd_method = "sd_bus_get_property";
             return ZBusError.Errno;
         }
 
@@ -246,6 +254,8 @@ pub const ZBus = struct {
 
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = "Unknown";
+            self.errored_libsystemd_method = "sd_bus_call";
             return ZBusError.Errno;
         }
 
@@ -272,6 +282,8 @@ pub const ZBus = struct {
 
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = null;
+            self.errored_libsystemd_method = "sd_bus_message_new_method_call";
             return ZBusError.Errno;
         }
         return message;
@@ -282,6 +294,8 @@ pub const ZBus = struct {
         const r = c_systemd.sd_bus_get_method_call_timeout(self.bus, &xd);
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = null;
+            self.errored_libsystemd_method = "sd_bus_get_method_call_timeout";
             return ZBusError.Errno;
         }
 
@@ -292,6 +306,8 @@ pub const ZBus = struct {
         const r = c_systemd.sd_bus_set_method_call_timeout(self.bus, timeout_usec);
         if (r < 0) {
             self.last_errno = r;
+            self.errored_method_or_property = null;
+            self.errored_libsystemd_method = "sd_bus_set_method_call_timeout";
             return ZBusError.Errno;
         }
     }

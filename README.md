@@ -11,11 +11,11 @@ All you need to do is clone this repo and run:
 zig build run
 ```
 
-### This project depends on glibc!
+### This project depends on glibc and obviously systemd!
 
 ## Planned features
 * [x] Journald logs reading
-* [ ] Units management with systemd
+* [x] Units management with systemd
 * [ ] Resources monitor
 * [ ] Processes management
 * [ ] User management
@@ -25,12 +25,17 @@ zig build run
 * [ ] Docker???
 
 ## TODO (so I know what to do next lol)
-* [ ] systemctl enable, disable
-* [ ] systemctl daemon-reload
-* [ ] systemctl start transient
+* [x] systemctl enable, disable
+* [x] systemctl daemon-reload
+* [ ] custom dispatcher for http.zig to handle errors like `err.UnexpectedToken` if JSON type is invalid and give some meaningful error description.
+* [ ] `/v1/systemd/manager`
+* [ ] `/v1/systemd/journal`
 * [ ] system resources
 * [ ] process list, hell yeah, let's get to /proc
-* [ ] unification of api errors, need to make it right.
+* [x] unification of api errors, need to make it right.
+* [ ] systemctl start transient
+* [ ] advanced journal filtering
+* [ ] live journal with websockets
 
 # License
 AGPLv3
