@@ -22,13 +22,16 @@ pub fn getLastErrno() i32 {
 /// - error name or null if errno is invalid
 /// - description or null if errno is invalid
 pub fn translateErrno(errno: i32) ErrnoError {
+    const libc_err_name = libc.strerrorname_np(errno);
+    const libc_err_desc = libc.strerrordesc_np(errno);
+
     return .{
         .errno = errno,
         // According to GNU: The returned string does not change for the remaining execution of the program.
         // So I can safely just assign them here.
         // ref: https://www.gnu.org/software/libc/manual/html_node/Error-Messages.html#index-strerrorname_005fnp
-        .name = libc.strerrorname_np(errno),
-        .description = libc.strerrordesc_np(errno),
+        .name = if (libc_err_name != null) std.mem.sliceTo(libc_err_name, 0) else null,
+        .description = if (libc_err_desc != null) std.mem.sliceTo(libc_err_desc, 0) else null,
     };
 }
 

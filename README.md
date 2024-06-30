@@ -28,7 +28,7 @@ zig build run
 * [x] systemctl enable, disable
 * [x] systemctl daemon-reload
 * [ ] custom dispatcher for http.zig to handle errors like `err.UnexpectedToken` if JSON type is invalid and give some meaningful error description.
-* [ ] `/v1/systemd/manager`
+* [x] `/v1/systemd/manager`
 * [ ] `/v1/systemd/journal`
 * [ ] system resources
 * [ ] process list, hell yeah, let's get to /proc

@@ -2,6 +2,12 @@ pub const journal = @import("./routes/journal.zig");
 pub const pidEins = @import("./routes/pid-eins.zig");
 pub const linux = @import("./routes/linux.zig");
 
+pub const v1 = .{
+    .systemd = .{
+        .manager = @import("./routes/v1/systemd.zig").ManagerRoutes,
+    },
+};
+
 const logger = std.log.scoped(.routeRegister);
 
 pub fn registerRoutes(router: anytype, prefix: ?[]const u8, comptime RoutesStruct: type) void {

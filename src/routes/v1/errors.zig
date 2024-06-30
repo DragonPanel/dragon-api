@@ -33,11 +33,11 @@ pub const ValidationSingleErrorDetail = struct {
 };
 
 pub const ValidationErrorDetail = struct {
-    errors: []const ValidationErrorDetail,
+    errors: []const ValidationSingleErrorDetail,
 };
 
 pub fn ApiError(comptime T: type) type {
-    switch (@typeInfo(T)) {
+    return switch (@typeInfo(T)) {
         .Void => struct {
             type: []const u8,
             status: u16,
@@ -58,12 +58,12 @@ pub fn ApiError(comptime T: type) type {
             error_data_type: []const u8 = @typeName(T),
             error_data: T,
         },
-    }
+    };
 }
 
 pub fn sendValidationError(res: *Response, errors: []const common.ValidationError) !void {
     res.clearWriter();
-    var validation_errors = res.arena.alloc(ValidationSingleErrorDetail, errors.len);
+    var validation_errors = try res.arena.alloc(ValidationSingleErrorDetail, errors.len);
 
     for (errors, 0..) |err, i| {
         validation_errors[i] = ValidationSingleErrorDetail{
@@ -81,7 +81,7 @@ pub fn sendValidationError(res: *Response, errors: []const common.ValidationErro
         .title = "Validation error.",
         .detail = "Query or body has invalid properties, see error_data for details.",
         .error_data = ValidationErrorDetail{
-            .errors = &validation_errors,
+            .errors = validation_errors,
         },
     }, .{});
 }
@@ -90,7 +90,7 @@ pub fn sendBusError(res: *Response, bus: *zbus.ZBus) !void {
     res.clearWriter();
 
     const errno = -bus.getLastErrno(); // libsystemd is returning negative errno
-    const err = try bus.getLastCallError();
+    const err = bus.getLastCallError();
 
     var name: ?[]const u8 = err.name;
     var description: ?[]const u8 = err.message;
@@ -112,7 +112,7 @@ pub fn sendBusError(res: *Response, bus: *zbus.ZBus) !void {
         .type = DBUS_ERROR_TYPE,
         .status = res.status,
         .title = "Dbus error.",
-        .detail = try std.fmt.allocPrint("%s: %s", .{
+        .detail = try std.fmt.allocPrint(res.arena, "{s}: {s}", .{
             name orelse "UNKNOWN",
             description orelse "Unknown error.",
         }),

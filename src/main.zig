@@ -37,6 +37,8 @@ pub fn main() !void {
 
     const router = server.router();
 
+    routes.registerRoutes(router, "/v1/systemd/manager", routes.v1.systemd.manager);
+
     routes.registerRoutes(router, "/journal", routes.journal.Routes);
     routes.registerRoutes(router, "/pid1", routes.pidEins.Routes);
     routes.registerRoutes(router, "/linux", routes.linux.Routes);

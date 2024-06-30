@@ -259,11 +259,11 @@ pub const Manager = struct {
         };
     }
 
-    pub fn killUnit(self: *Manager, name: [:0]const u8, who: [:0]const u8, signal: i32) zbus.ZBusError!void {
+    pub fn killUnit(self: *Manager, name: [:0]const u8, whom: [:0]const u8, signal: i32) zbus.ZBusError!void {
         var m = try self.proxy.callMethod(
             "KillUnit",
             "ssi",
-            .{ name.ptr, who.ptr, signal },
+            .{ name.ptr, whom.ptr, signal },
         );
         defer m.unref();
     }
@@ -447,6 +447,48 @@ pub const Unit = struct {
 
     pub fn init(bus: *zbus.ZBus, path: [:0]const u8) Unit {
         return Unit{ .proxy = ZBusProxy.init(bus, destination, path, interface) };
+    }
+
+    pub fn start(self: *Unit, allocator: std.mem.Allocator, mode: [:0]const u8) !zbus.Path {
+        return try self.startishJob(allocator, "Start", mode);
+    }
+
+    pub fn stop(self: *Unit, allocator: std.mem.Allocator, mode: [:0]const u8) !zbus.Path {
+        return try self.startishJob(allocator, "Stop", mode);
+    }
+
+    pub fn reload(self: *Unit, allocator: std.mem.Allocator, mode: [:0]const u8) !zbus.Path {
+        return try self.startishJob(allocator, "Reload", mode);
+    }
+
+    pub fn restart(self: *Unit, allocator: std.mem.Allocator, mode: [:0]const u8) !zbus.Path {
+        return try self.startishJob(allocator, "Restart", mode);
+    }
+
+    pub fn reloadOrRestart(self: *Unit, allocator: std.mem.Allocator, mode: [:0]const u8) !zbus.Path {
+        return try self.startishJob(allocator, "ReloadOrRestart", mode);
+    }
+
+    pub fn kill(self: *Unit, whom: [:0]const u8, signal: i32) !void {
+        var m = try self.proxy.callMethod(
+            "Kill",
+            "si",
+            .{ whom.ptr, signal },
+        );
+        defer m.unref();
+    }
+
+    fn startishJob(self: *Unit, allocator: std.mem.Allocator, method: [:0]const u8, mode: [:0]const u8) !zbus.Path {
+        var m = try self.proxy.callMethod(
+            method,
+            "s",
+            .{mode.ptr},
+        );
+        defer m.unref();
+        var job: ?[*:0]const u8 = null;
+        _ = try m.read("o", .{&job});
+
+        return try allocator.dupeZ(u8, std.mem.sliceTo(job.?, 0));
     }
 
     pub fn Id(self: *Unit, allocator: std.mem.Allocator) ![:0]const u8 {
