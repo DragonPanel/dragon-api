@@ -1,6 +1,7 @@
 const std = @import("std");
 const httpz = @import("httpz");
 const linux = @import("../core/linux.zig");
+const common = @import("../common.zig");
 
 const Request = httpz.Request;
 const Response = httpz.Response;
@@ -37,5 +38,25 @@ pub const Routes = struct {
         const comm = try linux.getCommByPid(pid, &comm_buffer);
 
         try res.json(.{ .pid = pid, .comm = comm }, .{});
+    }
+
+    pub fn @"GET /users"(_: *Request, res: *Response) anyerror!void {
+        const users = linux.listUsersLeaky(res.arena) catch |err| {
+            if (err == linux.UserErrors.Errno) {
+                res.status = 500;
+                const trans_err = common.translateErrno(common.getLastErrno());
+
+                try res.json(.{
+                    .@"error" = trans_err.name,
+                    .description = trans_err.description,
+                }, .{});
+
+                return;
+            }
+
+            return err;
+        };
+
+        return try res.json(users, .{});
     }
 };

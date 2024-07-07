@@ -4,7 +4,7 @@ pub const linux = @import("./routes/linux.zig");
 
 pub const v1 = .{
     .systemd = .{
-        .manager = @import("./routes/v1/systemd.zig").ManagerRoutes,
+        .manager = @import("./routes/v1/systemd-manager.zig").ManagerRoutes,
     },
 };
 

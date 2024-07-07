@@ -1,12 +1,14 @@
 const std = @import("std");
+const common = @import("../../common.zig");
+const config_module = @import("../../config.zig");
+const errors = @import("./errors.zig");
 const httpz = @import("httpz");
+const zbus = @import("../../core/zbus.zig");
+const systemdbus = @import("../../core/systemd-dbus-interfaces.zig");
+const JournalReader = @import("../../core/journal-reader.zig").JournalReader;
+
 const Request = httpz.Request;
 const Response = httpz.Response;
-const common = @import("../common.zig");
-const JournalReader = @import("../core/journal-reader.zig").JournalReader;
-const configModule = @import("../config.zig");
-
-const Errors = error{ParsingError};
 
 const JournalQuery = struct {
     /// How many lines should be retuned
@@ -25,26 +27,28 @@ const JournalQuery = struct {
 
     /// Unit name. If no unit is specified then all units are includes.
     unit: ?[]const u8 = null,
-
-    // TODO: add later cool filtering stuff ^^
 };
 
 pub const Routes = struct {
-    pub fn @"GET /query"(req: *Request, res: *Response) anyerror!void {
-        var parsedQuery = parseQuery(req, res) catch {
-            return;
-        };
-        const config = try configModule.getConfig();
+    pub fn @"GET /simple-query"(req: *Request, res: *Response) anyerror!void {
+        const query_parse_result = try parseQuery(res.arena, req);
 
-        if (parsedQuery.limit > config.maxJournalLines) {
-            std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsedQuery.limit, config.maxJournalLines });
-            parsedQuery.limit = config.maxJournalLines;
+        if (!query_parse_result.validation_result.success) {
+            return try errors.sendValidationError(res, query_parse_result.validation_result.errors);
+        }
+
+        var parsed_query = query_parse_result.data.?;
+        const config = try config_module.getConfig();
+
+        if (parsed_query.limit > config.maxJournalLines) {
+            std.log.warn("Requested {d} lines of journal, but maxJournalLines in config is set to {d}.", .{ parsed_query.limit, config.maxJournalLines });
+            parsed_query.limit = config.maxJournalLines;
         }
 
         const allocator = res.arena;
         var fields: ?[][]const u8 = null;
 
-        if (parsedQuery.fields) |f| {
+        if (parsed_query.fields) |f| {
             var fieldsList = std.ArrayList([]const u8).init(allocator);
             var it = std.mem.splitSequence(u8, f, ",");
 
@@ -56,11 +60,11 @@ pub const Routes = struct {
         }
 
         var reader = try JournalReader.init(allocator, .{
-            .unit = parsedQuery.unit,
-            .lines = parsedQuery.limit,
+            .unit = parsed_query.unit,
+            .lines = parsed_query.limit,
             .fields = fields,
-            .cursor = parsedQuery.cursor,
-            .direction = if (std.mem.eql(u8, parsedQuery.direction, "DESC")) .DESCENDING else .ASCENDING,
+            .cursor = parsed_query.cursor,
+            .direction = if (std.mem.eql(u8, parsed_query.direction, "DESC")) .DESCENDING else .ASCENDING,
         });
         defer reader.deinit();
 
@@ -74,21 +78,22 @@ pub const Routes = struct {
     }
 };
 
+const QueryParseResult = struct {
+    validation_result: common.ValidationResult,
+    data: ?JournalQuery,
+};
+
 /// Parses get query
-/// If something is wrong it sends 400 - Bad Request response and returns an error.
-/// You **MUST** not use res object in case of an error.
-fn parseQuery(req: *Request, res: *Response) !JournalQuery {
+fn parseQuery(allocator: std.mem.Allocator, req: *Request) !QueryParseResult {
     var parsedQuery = JournalQuery{};
     const query = try req.query();
+    var validation_builder = common.ValidationResultBuilder.new(allocator);
 
     if (query.get("limit")) |limit| {
-        parsedQuery.limit = std.fmt.parseInt(u32, limit, 0) catch {
-            try common.sendBadRequest(
-                res,
-                "Query parameter 'limit' is invalid, it must be positive integer.",
-                .{ .param = "limit", .value = limit },
-            );
-            return Errors.ParsingError;
+        parsedQuery.limit = std.fmt.parseInt(u32, limit, 0) catch blk: {
+            try validation_builder.addError(.{ .value = limit, .property = "limit", .message = "Limit must be valid non-negative integer." });
+
+            break :blk parsedQuery.limit;
         };
     }
 
@@ -102,12 +107,7 @@ fn parseQuery(req: *Request, res: *Response) !JournalQuery {
         } else if (std.ascii.eqlIgnoreCase(direction, "DESC")) {
             parsedQuery.direction = "DESC";
         } else {
-            try common.sendBadRequest(
-                res,
-                "Query parameter 'direction' is invalid, it must be either 'ASC' or 'DESC'.",
-                .{ .param = "direction", .value = direction },
-            );
-            return Errors.ParsingError;
+            try validation_builder.addError(.{ .value = direction, .property = "direction", .message = "Direction can be either 'ASC' or 'DESC'. Case is ignored." });
         }
     }
 
@@ -116,12 +116,11 @@ fn parseQuery(req: *Request, res: *Response) !JournalQuery {
         var i: u32 = 0;
         while (it.next()) |field| {
             if (!validateFieldName(field)) {
-                try common.sendBadRequest(
-                    res,
-                    "Query parameter 'fields' is invalid, it must be comma seperated list of strings that contains only UPPERCASE letters, number, underscores and can't start with double underscore.",
-                    .{ .param = try std.fmt.allocPrint(res.arena, "field:{d}", .{i}), .value = field },
-                );
-                return Errors.ParsingError;
+                try validation_builder.addError(.{
+                    .value = field,
+                    .property = try std.fmt.allocPrint(allocator, "fields:{d}", .{i}),
+                    .message = "One of provided fields was invalid. Field list must be comma seperated list of strings that contains only UPPERCASE letters, number, underscores and can't start with double underscore.",
+                });
             }
             i += 1;
         }
@@ -132,7 +131,18 @@ fn parseQuery(req: *Request, res: *Response) !JournalQuery {
         parsedQuery.unit = unit;
     }
 
-    return parsedQuery;
+    const validation_result = try validation_builder.build();
+    if (!validation_result.success) {
+        return QueryParseResult{
+            .data = null,
+            .validation_result = validation_result,
+        };
+    } else {
+        return QueryParseResult{
+            .data = parsedQuery,
+            .validation_result = validation_result,
+        };
+    }
 }
 
 /// Journald allows only for underscores, UPPERCASE letters and numbers.

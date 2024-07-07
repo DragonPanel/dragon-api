@@ -7,10 +7,6 @@ pub const JournalReaderConfig = struct {
     /// Which fields to return. If not set then it will return all fields.
     fields: ?[][]const u8 = null,
 
-    /// If set to true then binary data will be encoded as base64, otherwise as array of numbers (bytes)
-    /// Default = true
-    encodeBinaryAsBase64: bool = true,
-
     /// How many lines to load. Default = 100
     lines: u32 = 100,
 
@@ -26,14 +22,13 @@ pub const JournalReaderConfig = struct {
     cursor: ?[]const u8 = null,
 
     /// Timestamp starting point, if cursor is set then this has no effect
-    realTimestamp: ?u64 = null,
+    real_timestamp: ?u64 = null,
 };
 
 pub const JournalReader = struct {
     allocator: std.mem.Allocator,
     journal: sdJournal.Journal,
     fields: ?std.BufSet = null,
-    encodeBinaryAsBase64: bool,
     lines: u32,
     direction: ReadingDirection,
     unit: ?[]const u8,
@@ -47,7 +42,6 @@ pub const JournalReader = struct {
         var reader = Self{
             .allocator = allocator,
             .journal = try sdJournal.openJournal(0),
-            .encodeBinaryAsBase64 = config.encodeBinaryAsBase64,
             .lines = config.lines,
             .direction = config.direction,
             .unit = config.unit,
@@ -175,7 +169,6 @@ pub const JournalReader = struct {
         if (std.unicode.utf8ValidateSlice(rawValue)) {
             try stream.write(rawValue);
         } else {
-            // TODO: Add support for number array binary data encoding
             const b64encoder = std.base64.standard.Encoder;
             const size = b64encoder.calcSize(rawValue.len);
 

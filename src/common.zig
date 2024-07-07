@@ -7,14 +7,18 @@ const httpz = @import("httpz");
 const Request = httpz.Request;
 const Response = httpz.Response;
 
-threadlocal var lastErrno: i32 = 0;
+pub const StringToBoolErrors = error{
+    InvalidString,
+};
+
+threadlocal var last_errno: i32 = 0;
 
 pub fn setLastErrno(errno: i32) void {
-    lastErrno = errno;
+    last_errno = errno;
 }
 
 pub fn getLastErrno() i32 {
-    return lastErrno;
+    return last_errno;
 }
 
 /// Translates given errno value to `ErrnoError` struct, containing
@@ -69,6 +73,31 @@ pub fn stringToBool(str: ?[]const u8, allowNoYes: bool) bool {
     }
 
     return false;
+}
+
+/// Works almost the same way as `stringToBool` but
+/// return an error instead of false if string if invalid.
+pub fn stringToBoolStrict(str: ?[]const u8, allowNoYes: bool) StringToBoolErrors!bool {
+    if (str == null) {
+        return StringToBoolErrors.InvalidString;
+    }
+
+    if (std.ascii.eqlIgnoreCase(str.?, "true")) {
+        return true;
+    }
+    if (std.ascii.eqlIgnoreCase(str.?, "false")) {
+        return false;
+    }
+
+    if (allowNoYes and std.ascii.eqlIgnoreCase(str.?, "yes")) {
+        return true;
+    }
+
+    if (allowNoYes and std.ascii.eqlIgnoreCase(str.?, "no")) {
+        return false;
+    }
+
+    return StringToBoolErrors.InvalidString;
 }
 
 pub const ErrnoError = struct {
